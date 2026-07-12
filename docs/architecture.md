@@ -5,9 +5,9 @@
 
 ## Infrastructure
 
-Single Ubuntu 20.04 server on Oracle Cloud free tier (163.192.117.50). Public hostname: althea-lab.duckdns.org via DuckDNS (free dynamic DNS).
+Single Ubuntu 20.04 server on Oracle Cloud free tier at 163.192.117.50. Domain is althea-lab.duckdns.org, set up through DuckDNS (free dynamic DNS) pointing to the server IP.
 
-Three firewall layers sit in front of everything: Oracle VCN Security List, OS-level iptables, and UFW. All three have to allow a port for traffic to get through.
+There are three firewall layers in front of everything: Oracle VCN Security List at the cloud level, then iptables, then UFW on the host. All three have to allow a port for traffic to actually reach the server.
 
 ---
 
@@ -24,16 +24,16 @@ UFW + iptables (host firewall)
     |
     v
 nginx (ports 80/443)
-  - port 80 redirects to 443
-  - port 443: Let's Encrypt TLS, serves /var/www/html
+  port 80 redirects to 443
+  port 443: Let's Encrypt TLS cert, HSTS, serves /var/www/html
     |
-    +-- Monitoring stack (Docker, --network host)
-        |
-        +-- Prometheus      :9090  scrapes node_exporter + nginx_exporter
-        +-- node_exporter   :9100  system metrics
-        +-- nginx_exporter  :9113  nginx metrics
-        +-- Grafana         :3000  dashboards (3 provisioned)
-        +-- Uptime Kuma     :3001  availability monitoring
+    v
+Monitoring stack (Docker, --network host)
+  Prometheus      :9090   scrapes node_exporter + nginx_exporter
+  node_exporter   :9100   system metrics
+  nginx_exporter  :9113   nginx metrics
+  Grafana         :3000   3 provisioned dashboards
+  Uptime Kuma     :3001   availability monitoring
 ```
 
 ---
@@ -42,25 +42,25 @@ nginx (ports 80/443)
 
 | Layer | What it does |
 |---|---|
-| DuckDNS + Let's Encrypt | Real trusted TLS cert, auto-renews every 90 days |
-| nginx HSTS | Forces HTTPS even if someone types http:// |
-| UFW | Host-level firewall, default deny |
-| iptables | Handles Docker network traffic UFW misses |
-| Oracle VCN | Cloud-level allow list before traffic hits the server |
-| fail2ban | Bans IPs after 3 failed SSH attempts, 1 hour ban |
+| DuckDNS + Let's Encrypt | Real trusted TLS cert, auto-renews every 90 days via certbot cron |
+| nginx HSTS | Forces HTTPS on return visits |
+| UFW | Host firewall, default deny |
+| iptables | Catches Docker traffic UFW misses |
+| Oracle VCN | Cloud allow list, traffic blocked before it hits the server |
+| fail2ban | Bans IPs after 3 failed SSH attempts, 1 hour ban time |
 | auditd | Watches /etc/passwd, /etc/shadow, sudoers, sshd_config |
-| SSH hardening | Key-only, no root, MaxAuthTries 3, 5 min idle timeout |
+| SSH hardening | Key-only, no root, MaxAuthTries 3, 5 min idle timeout, X11 off |
 | sysctl | SYN cookies, no ICMP redirects, rp_filter, dmesg restrict |
 
 ---
 
-## Data flow
+## How traffic flows
 
-Browser hits althea-lab.duckdns.org on port 80/443. DuckDNS resolves to 163.192.117.50. Oracle VCN allows it. UFW/iptables allow it. nginx handles TLS termination and serves content.
+Browser hits althea-lab.duckdns.org on port 80 or 443. DuckDNS resolves to 163.192.117.50. Oracle VCN allows it through. UFW and iptables allow it. nginx terminates TLS and serves content. Port 80 just redirects to 443.
 
-Prometheus scrapes node_exporter and nginx_exporter every 15 seconds. Grafana reads from Prometheus. Uptime Kuma independently pings HTTP, HTTPS, and Prometheus every 60 seconds. Alerts fire through Prometheus alertmanager rules.
+Prometheus scrapes node_exporter and nginx_exporter every 15 seconds. Grafana reads from Prometheus. Uptime Kuma independently pings HTTP, HTTPS, and Prometheus every 60 seconds. Alert rules in Prometheus fire if anything goes out of range.
 
-Backups run via cron at 2am, tar up configs, keep 7 days, delete old ones automatically.
+Backups run at 2am via cron, tar up configs to /var/backups/final-project, keep 7 days, delete older ones automatically.
 
 ---
 
@@ -68,9 +68,9 @@ Backups run via cron at 2am, tar up configs, keep 7 days, delete old ones automa
 
 ```
 [Browser]
-    |  HTTPS (443)
+    |  HTTP/HTTPS
     v
-[DuckDNS] --> althea-lab.duckdns.org --> 163.192.117.50
+[DuckDNS] althea-lab.duckdns.org -> 163.192.117.50
     |
     v
 [Oracle VCN Security List]
@@ -80,16 +80,16 @@ Backups run via cron at 2am, tar up configs, keep 7 days, delete old ones automa
     |
     v
 [nginx]
-  |--[port 80]--> 301 redirect to HTTPS
-  |--[port 443]--> serves site (Let's Encrypt TLS)
+  port 80  -> 301 redirect to HTTPS
+  port 443 -> serves site, Let's Encrypt TLS, HSTS
     |
     v
-[Monitoring - Docker host network]
-  Prometheus:9090 <-- node_exporter:9100
-                  <-- nginx_exporter:9113
-  Grafana:3000    <-- Prometheus
-  Uptime Kuma:3001 (independent checks)
+[Docker containers, host network]
+  Prometheus:9090 <- node_exporter:9100
+                  <- nginx_exporter:9113
+  Grafana:3000    <- Prometheus
+  Uptime Kuma:3001 (independent availability checks)
     |
     v
-[Alerts] --> Prometheus rules --> Grafana alert panels
+[Prometheus alert rules -> Grafana dashboards]
 ```

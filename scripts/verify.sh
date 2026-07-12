@@ -19,7 +19,7 @@ check() {
 }
 
 echo "--- DNS ---"
-resolved=$(dig +short "$DOMAIN" | head -1)
+resolved=$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk '{print $1}' | head -1)
 check "DNS resolves to correct IP" "$( [[ "$resolved" == "$SERVER_IP" ]] && echo ok || echo "got $resolved" )"
 
 echo "--- TLS ---"

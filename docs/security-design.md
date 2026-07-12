@@ -5,40 +5,40 @@
 
 ## Defense in depth
 
-The idea was to not rely on any single control. If one thing fails, something else catches it. Here's how the layers stack:
+The whole point was that no single control should be the only thing standing between the internet and the server. Each layer covers the gaps in the one before it.
 
-**Network level:** Oracle VCN only allows specific ports in. Even if UFW was misconfigured, traffic hitting a port not in the VCN allow list would never reach the server.
+**Network level:** Oracle VCN only allows specific ports in. Even if UFW was misconfigured, anything hitting a port not in the VCN allow list never reaches the server. It's a separate gate that I had to open manually in the Oracle console for each lab.
 
-**Host firewall:** UFW with default deny. Only ports 22, 80, 443, 9090, 3000, 3001, 9100, 9113 are open. iptables handles the Docker traffic that UFW can miss.
+**Host firewall:** UFW with default deny. Only ports 22, 80, 443, 9090, 3000, 3001, 9100, 9113 are open. iptables runs alongside it to handle Docker traffic that UFW can miss.
 
-**SSH:** Key-only authentication, root login disabled, MaxAuthTries 3, 5 minute idle timeout, X11 and agent forwarding off. The attack surface for SSH is basically just "steal the private key."
+**SSH:** Key-only auth, root login disabled, MaxAuthTries 3, 5 minute idle timeout, X11 forwarding off, agent forwarding off. The only real attack surface left is stealing the private key.
 
-**Brute force protection:** fail2ban bans any IP that fails SSH authentication 3 times in 10 minutes, for 1 hour. This makes automated scanning basically useless.
+**Brute force protection:** fail2ban bans any IP that fails SSH auth 3 times in 10 minutes, for 1 hour. Automated scanners hit auth.log constantly on any internet-facing server, fail2ban makes that noise stop showing up.
 
-**Audit logging:** auditd watches /etc/passwd, /etc/shadow, /etc/sudoers, and /etc/ssh/sshd_config. Any write to those files gets logged with timestamp and user. If someone gets in and tries to escalate, there's a record.
+**Audit logging:** auditd watches /etc/passwd, /etc/shadow, /etc/sudoers, and /etc/ssh/sshd_config. Any write to those files gets logged with timestamp and user. If someone got in and tried to escalate, there would be a record of it.
 
-**TLS:** Let's Encrypt cert on althea-lab.duckdns.org. Real trusted cert, not self-signed. Auto-renews every 90 days via cron. HSTS header forces HTTPS for return visitors. TLS 1.2/1.3 only.
+**TLS:** Let's Encrypt cert on althea-lab.duckdns.org. Real trusted cert, got it through certbot standalone mode during the deploy. Auto-renews every 90 days via cron. HSTS header so browsers remember to always use HTTPS. TLS 1.2/1.3 only. This was the upgrade from Lab 4 where I had a self-signed cert that caused browser warnings.
 
-**Kernel hardening:** SYN cookies for flood protection, no ICMP redirects, reverse path filtering, dmesg restricted to root, SUID core dumps disabled.
+**Kernel hardening:** SYN cookies for flood protection, no ICMP redirects, reverse path filtering, dmesg restricted to root, SUID core dumps disabled. All applied via sysctl in Ansible.
 
-**Least privilege:** Unnecessary services and packages removed (telnet, rsh, talk, finger, cups, avahi). /tmp mounted noexec/nosuid/nodev so scripts dropped there can't run.
+**Least privilege:** Removed unnecessary packages (telnet, rsh, talk, finger) and disabled services that had no reason to run on a cloud server (cups, avahi-daemon were already gone from earlier labs). /tmp locked with noexec/nosuid/nodev.
 
-**Auto-updates:** unattended-upgrades handles security patches automatically so the kernel and packages stay current without manual intervention.
+**Auto-updates:** unattended-upgrades applies security patches automatically. Kernel updates still need a manual reboot but package-level patches happen without me doing anything.
 
 ---
 
 ## Known weaknesses
 
-Prometheus at :9090 has no authentication. The /metrics endpoint is world-readable. This exposes system metric data to anyone who knows the IP. Fixing it properly requires a reverse proxy with basic auth in front of Prometheus, which was out of scope.
+Prometheus at :9090 has no authentication. /metrics is open to anyone with the IP and port. The data is read-only system metrics so the actual risk is low, but it's not ideal. Fixing it properly means putting nginx in front of Prometheus with basic auth, which would add configuration complexity.
 
-All monitoring ports are accessible from any IP. Ideally these would be behind a VPN or restricted by source IP.
+All monitoring ports are reachable from any IP. Ideally they'd be behind a VPN or restricted to known source IPs.
 
-Off-server backups aren't set up. Backups sit on the same disk as the server. A disk failure takes out both the data and the backup. S3 or similar would fix this.
+Backups are on the same server. Disk fails, backups gone. S3 would fix it.
 
-Single server with no redundancy. If the instance goes down, everything goes down.
+Single server, no redundancy. If the instance goes down, everything goes down.
 
 ---
 
 ## What was prioritized
 
-SSH hardening and TLS were the two highest priorities since those are the main attack surfaces for an internet-facing server. Everything else built out from there.
+SSH hardening and real TLS were the top two since those are the main attack surfaces. Everything else built out from there across the four labs.

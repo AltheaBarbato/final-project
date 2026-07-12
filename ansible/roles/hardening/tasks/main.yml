@@ -1,8 +1,6 @@
 ---
 - name: Remove unnecessary packages
   shell: apt-get remove -y telnet rsh-client talk finger 2>/dev/null || true
-  args:
-    warn: false
   changed_when: false
 
 - name: Disable unnecessary services
@@ -102,9 +100,9 @@
       APT::Periodic::Unattended-Upgrade "1";
 
 - name: Lock /tmp with noexec
-  mount:
-    path: /tmp
-    src: tmpfs
-    fstype: tmpfs
-    opts: defaults,noexec,nosuid,nodev
-    state: mounted
+  shell: |
+    if ! grep -q 'tmpfs /tmp' /etc/fstab; then
+      echo 'tmpfs /tmp tmpfs defaults,noexec,nosuid,nodev 0 0' >> /etc/fstab
+    fi
+    mount -o remount,noexec,nosuid,nodev /tmp 2>/dev/null || true
+  changed_when: false
