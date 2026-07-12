@@ -1,0 +1,7 @@
+*.pem
+*.key
+*.retry
+.ansible/
+__pycache__/
+*.pyc
+.DS_Store

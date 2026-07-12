@@ -1,0 +1,9 @@
+---
+server_ip: "163.192.117.50"
+domain: "althea-lab.duckdns.org"
+duckdns_token: "{{ lookup('env', 'DUCKDNS_TOKEN') }}"
+
+backup_dir: /var/backups/final-project
+backup_retention_days: 7
+
+certbot_email: "althearosemaria@gmail.com"

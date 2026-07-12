@@ -1,0 +1,37 @@
+---
+- name: Create backup directory
+  file:
+    path: "{{ backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy backup script
+  copy:
+    src: backup.sh
+    dest: /usr/local/bin/backup.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy restore script
+  copy:
+    src: restore.sh
+    dest: /usr/local/bin/restore.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Schedule nightly backup at 2am
+  cron:
+    name: nightly_backup
+    hour: "2"
+    minute: "0"
+    job: "/usr/local/bin/backup.sh >> /var/log/backup.log 2>&1"
+    user: root
+
+- name: Run initial backup
+  shell: /usr/local/bin/backup.sh
+  args:
+    creates: "{{ backup_dir }}/latest"

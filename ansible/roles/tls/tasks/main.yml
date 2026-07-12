@@ -1,0 +1,77 @@
+---
+- name: Install certbot and nginx plugin
+  shell: |
+    apt-get install -y snapd
+    snap install core
+    snap refresh core
+    snap install --classic certbot
+    ln -sf /snap/bin/certbot /usr/bin/certbot
+  args:
+    creates: /snap/bin/certbot
+
+- name: Stop nginx temporarily for certbot standalone
+  systemd:
+    name: nginx
+    state: stopped
+  ignore_errors: true
+
+- name: Obtain Let's Encrypt certificate
+  shell: >
+    certbot certonly --standalone
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    -d {{ domain }}
+  args:
+    creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+
+- name: Deploy nginx HTTPS config
+  copy:
+    dest: /etc/nginx/sites-available/default
+    content: |
+      server {
+          listen 80;
+          server_name {{ domain }};
+          return 301 https://$host$request_uri;
+      }
+
+      server {
+          listen 443 ssl;
+          server_name {{ domain }};
+
+          ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+          ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_ciphers HIGH:!aNULL:!MD5;
+          add_header Strict-Transport-Security "max-age=31536000" always;
+
+          root /var/www/html;
+          index index.html;
+
+          location / {
+              try_files $uri $uri/ =404;
+          }
+      }
+  notify: reload nginx
+
+- name: Open port 443 in UFW
+  shell: ufw allow 443/tcp
+  changed_when: false
+
+- name: Open port 443 in iptables
+  shell: iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+  changed_when: false
+
+- name: Start nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Set up certbot auto-renewal cron
+  cron:
+    name: certbot_renew
+    hour: "3"
+    minute: "0"
+    job: "certbot renew --quiet --deploy-hook 'systemctl reload nginx'"
+    user: root

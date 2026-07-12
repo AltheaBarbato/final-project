@@ -1,0 +1,25 @@
+---
+- name: Bootstrap Python 3.9
+  hosts: webservers
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check Python 3.9
+      raw: test -f /usr/bin/python3.9
+      register: py39
+      ignore_errors: true
+      changed_when: false
+
+    - name: Install Python 3.9
+      raw: apt-get update -qq && apt-get install -y python3.9
+      when: py39.rc != 0
+
+- name: Apply all roles
+  hosts: webservers
+  become: true
+  vars_files:
+    - vars/main.yml
+  roles:
+    - hardening
+    - tls
+    - backup
